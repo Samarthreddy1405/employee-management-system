@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         Changeset 1 — Create employees table (original, never edit)
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <changeSet id="202410051000-create-employees-table" author="system">
+        <sql dbms="postgresql" splitStatements="true" stripComments="true">
+            <![CDATA[
+            CREATE TABLE employees (
+                id              UUID            NOT NULL,
+                org_id          UUID            NOT NULL,
+                name            VARCHAR(150)    NOT NULL,
+                email           VARCHAR(255)    NOT NULL,
+                phone           VARCHAR(20)     NULL,
+                department      VARCHAR(100)    NULL,
+                designation     VARCHAR(100)    NULL,
+                metadata        JSONB           NULL,
+                created_on      TIMESTAMP(6)    NOT NULL,
+                updated_on      TIMESTAMP(6)    NOT NULL,
+                is_active       BOOLEAN         NOT NULL DEFAULT TRUE,
+                created_by      UUID            NULL,
+                updated_by      UUID            NULL,
+                CONSTRAINT employees_pkey        PRIMARY KEY (id),
+                CONSTRAINT uk_employees_email    UNIQUE      (email),
+                CONSTRAINT uk_employees_phone    UNIQUE      (phone)
+            );
+            CREATE INDEX idx_employees_org_id       ON employees (org_id);
+            CREATE INDEX idx_employees_metadata_gin ON employees USING GIN (metadata jsonb_path_ops);
+            ]]>
+        </sql>
+        <rollback>
+            <sql dbms="postgresql" splitStatements="true" stripComments="true">
+                <![CDATA[
+                DROP INDEX IF EXISTS idx_employees_metadata_gin;
+                DROP INDEX IF EXISTS idx_employees_org_id;
+                DROP TABLE IF EXISTS employees;
+                ]]>
+            </sql>
+        </rollback>
+    </changeSet>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         Changeset 2 — Create departments table
+         id     : UUID PK (gen_random_uuid())
+         name   : VARCHAR(100) UNIQUE NOT NULL
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <changeSet id="202410052000-create-departments-table" author="system">
+        <sql dbms="postgresql" splitStatements="true" stripComments="true">
+            <![CDATA[
+            CREATE TABLE departments (
+                id          UUID            NOT NULL DEFAULT gen_random_uuid(),
+                name        VARCHAR(100)    NOT NULL,
+                created_on  TIMESTAMP(6)    NOT NULL DEFAULT NOW(),
+                updated_on  TIMESTAMP(6)    NOT NULL DEFAULT NOW(),
+                CONSTRAINT departments_pkey       PRIMARY KEY (id),
+                CONSTRAINT uk_departments_name    UNIQUE      (name)
+            );
+            CREATE INDEX idx_departments_name ON departments (name);
+            ]]>
+        </sql>
+        <rollback>
+            <sql dbms="postgresql" splitStatements="true" stripComments="true">
+                <![CDATA[
+                DROP INDEX IF EXISTS idx_departments_name;
+                DROP TABLE IF EXISTS departments;
+                ]]>
+            </sql>
+        </rollback>
+    </changeSet>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         Changeset 3 — Create designations table
+         department_id : FK → departments(id)
+         UNIQUE on (department_id, name) — same title can exist in different depts
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <changeSet id="202410053000-create-designations-table" author="system">
+        <sql dbms="postgresql" splitStatements="true" stripComments="true">
+            <![CDATA[
+            CREATE TABLE designations (
+                id              UUID            NOT NULL DEFAULT gen_random_uuid(),
+                name            VARCHAR(100)    NOT NULL,
+                department_id   UUID            NOT NULL,
+                created_on      TIMESTAMP(6)    NOT NULL DEFAULT NOW(),
+                updated_on      TIMESTAMP(6)    NOT NULL DEFAULT NOW(),
+                CONSTRAINT designations_pkey            PRIMARY KEY (id),
+                CONSTRAINT designations_dept_name_uq    UNIQUE      (department_id, name),
+                CONSTRAINT fk_designations_department   FOREIGN KEY (department_id)
+                                                        REFERENCES departments(id)
+            );
+            CREATE INDEX idx_designations_department_id ON designations (department_id);
+            ]]>
+        </sql>
+        <rollback>
+            <sql dbms="postgresql" splitStatements="true" stripComments="true">
+                <![CDATA[
+                DROP INDEX IF EXISTS idx_designations_department_id;
+                DROP TABLE IF EXISTS designations;
+                ]]>
+            </sql>
+        </rollback>
+    </changeSet>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         Changeset 4 — Seed departments and designations from DEPT_DESIG_MAP
+         Source: frontend/src/constants/appData.js DEPT_DESIG_MAP
+         UUIDs are stable (hardcoded) so backfill in changeset 5 can reference them.
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <changeSet id="202410054000-seed-departments-and-designations" author="system">
+        <sql dbms="postgresql" splitStatements="true" stripComments="true">
+            <![CDATA[
+            -- ── Departments ────────────────────────────────────────────────
+            INSERT INTO departments (id, name, created_on, updated_on) VALUES
+                ('a0000001-0000-0000-0000-000000000001', 'IT',               NOW(), NOW()),
+                ('a0000001-0000-0000-0000-000000000002', 'Engineering',      NOW(), NOW()),
+                ('a0000001-0000-0000-0000-000000000003', 'QA',               NOW(), NOW()),
+                ('a0000001-0000-0000-0000-000000000004', 'HR',               NOW(), NOW()),
+                ('a0000001-0000-0000-0000-000000000005', 'Finance',          NOW(), NOW()),
+                ('a0000001-0000-0000-0000-000000000006', 'Sales',            NOW(), NOW()),
+                ('a0000001-0000-0000-0000-000000000007', 'Marketing',        NOW(), NOW()),
+                ('a0000001-0000-0000-0000-000000000008', 'Operations',       NOW(), NOW()),
+                ('a0000001-0000-0000-0000-000000000009', 'Customer Support', NOW(), NOW()),
+                ('a0000001-0000-0000-0000-000000000010', 'Administration',   NOW(), NOW());
+
+            -- ── Designations (IT) ──────────────────────────────────────────
+            INSERT INTO designations (id, name, department_id, created_on, updated_on) VALUES
+                ('b0000001-0000-0000-0000-000000000001', 'Software Developer',  'a0000001-0000-0000-0000-000000000001', NOW(), NOW()),
+                ('b0000001-0000-0000-0000-000000000002', 'Senior Developer',    'a0000001-0000-0000-0000-000000000001', NOW(), NOW()),
+                ('b0000001-0000-0000-0000-000000000003', 'Frontend Developer',  'a0000001-0000-0000-0000-000000000001', NOW(), NOW()),
+                ('b0000001-0000-0000-0000-000000000004', 'Backend Developer',   'a0000001-0000-0000-0000-000000000001', NOW(), NOW()),
+                ('b0000001-0000-0000-0000-000000000005', 'Full Stack Developer','a0000001-0000-0000-0000-000000000001', NOW(), NOW());
+
+            -- ── Designations (Engineering) ─────────────────────────────────
+            INSERT INTO designations (id, name, department_id, created_on, updated_on) VALUES
+                ('b0000002-0000-0000-0000-000000000001', 'Software Engineer',   'a0000001-0000-0000-0000-000000000002', NOW(), NOW()),
+                ('b0000002-0000-0000-0000-000000000002', 'Senior Developer',    'a0000001-0000-0000-0000-000000000002', NOW(), NOW()),
+                ('b0000002-0000-0000-0000-000000000003', 'Frontend Developer',  'a0000001-0000-0000-0000-000000000002', NOW(), NOW()),
+                ('b0000002-0000-0000-0000-000000000004', 'Backend Developer',   'a0000001-0000-0000-0000-000000000002', NOW(), NOW()),
+                ('b0000002-0000-0000-0000-000000000005', 'Full Stack Developer','a0000001-0000-0000-0000-000000000002', NOW(), NOW());
+
+            -- ── Designations (QA) ─────────────────────────────────────────
+            INSERT INTO designations (id, name, department_id, created_on, updated_on) VALUES
+                ('b0000003-0000-0000-0000-000000000001', 'QA Engineer',         'a0000001-0000-0000-0000-000000000003', NOW(), NOW()),
+                ('b0000003-0000-0000-0000-000000000002', 'Automation Tester',   'a0000001-0000-0000-0000-000000000003', NOW(), NOW());
+
+            -- ── Designations (HR) ─────────────────────────────────────────
+            INSERT INTO designations (id, name, department_id, created_on, updated_on) VALUES
+                ('b0000004-0000-0000-0000-000000000001', 'HR Executive',        'a0000001-0000-0000-0000-000000000004', NOW(), NOW()),
+                ('b0000004-0000-0000-0000-000000000002', 'HR Manager',          'a0000001-0000-0000-0000-000000000004', NOW(), NOW());
+
+            -- ── Designations (Finance) ────────────────────────────────────
+            INSERT INTO designations (id, name, department_id, created_on, updated_on) VALUES
+                ('b0000005-0000-0000-0000-000000000001', 'Accountant',          'a0000001-0000-0000-0000-000000000005', NOW(), NOW()),
+                ('b0000005-0000-0000-0000-000000000002', 'Financial Analyst',   'a0000001-0000-0000-0000-000000000005', NOW(), NOW());
+
+            -- ── Designations (Sales) ──────────────────────────────────────
+            INSERT INTO designations (id, name, department_id, created_on, updated_on) VALUES
+                ('b0000006-0000-0000-0000-000000000001', 'Sales Executive',     'a0000001-0000-0000-0000-000000000006', NOW(), NOW());
+
+            -- ── Designations (Marketing) ──────────────────────────────────
+            INSERT INTO designations (id, name, department_id, created_on, updated_on) VALUES
+                ('b0000007-0000-0000-0000-000000000001', 'Marketing Executive', 'a0000001-0000-0000-0000-000000000007', NOW(), NOW());
+
+            -- ── Designations (Operations) ─────────────────────────────────
+            INSERT INTO designations (id, name, department_id, created_on, updated_on) VALUES
+                ('b0000008-0000-0000-0000-000000000001', 'Operations Executive','a0000001-0000-0000-0000-000000000008', NOW(), NOW());
+
+            -- ── Designations (Customer Support) ───────────────────────────
+            INSERT INTO designations (id, name, department_id, created_on, updated_on) VALUES
+                ('b0000009-0000-0000-0000-000000000001', 'Support Executive',   'a0000001-0000-0000-0000-000000000009', NOW(), NOW());
+
+            -- ── Designations (Administration) ─────────────────────────────
+            INSERT INTO designations (id, name, department_id, created_on, updated_on) VALUES
+                ('b0000010-0000-0000-0000-000000000001', 'Admin Executive',     'a0000001-0000-0000-0000-000000000010', NOW(), NOW());
+            ]]>
+        </sql>
+        <rollback>
+            <sql dbms="postgresql" splitStatements="true" stripComments="true">
+                <![CDATA[
+                DELETE FROM designations WHERE id LIKE 'b000000%-0000-0000-0000-0000000000%';
+                DELETE FROM departments  WHERE id LIKE 'a0000001-0000-0000-0000-0000000000%';
+                ]]>
+            </sql>
+        </rollback>
+    </changeSet>
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         Changeset 5 — Add department_id and designation_id UUID FK columns
+                       to employees, backfill by matching existing name text,
+                       then drop the old VARCHAR columns.
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <changeSet id="202410055000-employees-dept-desig-uuid-fk" author="system">
+        <sql dbms="postgresql" splitStatements="true" stripComments="true">
+            <![CDATA[
+            -- Step A: add new nullable FK columns
+            ALTER TABLE employees
+                ADD COLUMN department_id  UUID NULL,
+                ADD COLUMN designation_id UUID NULL;
+
+            -- Step B: backfill department_id from name text
+            UPDATE employees e
+            SET department_id = d.id
+            FROM departments d
+            WHERE LOWER(TRIM(e.department)) = LOWER(TRIM(d.name));
+
+            -- Step C: backfill designation_id — must match both name AND the resolved department
+            UPDATE employees e
+            SET designation_id = des.id
+            FROM designations des
+            WHERE LOWER(TRIM(e.designation)) = LOWER(TRIM(des.name))
+              AND (
+                    e.department_id IS NULL                  -- no dept resolved; try name only
+                    OR des.department_id = e.department_id   -- dept matches exactly
+                  );
+
+            -- Step D: add FK constraints (nullable — existing rows may not resolve)
+            ALTER TABLE employees
+                ADD CONSTRAINT fk_employees_department   FOREIGN KEY (department_id)  REFERENCES departments(id),
+                ADD CONSTRAINT fk_employees_designation  FOREIGN KEY (designation_id) REFERENCES designations(id);
+
+            -- Step E: indexes for FK lookups
+            CREATE INDEX idx_employees_department_id  ON employees (department_id);
+            CREATE INDEX idx_employees_designation_id ON employees (designation_id);
+
+            -- Step F: drop old VARCHAR columns
+            ALTER TABLE employees
+                DROP COLUMN department,
+                DROP COLUMN designation;
+            ]]>
+        </sql>
+        <rollback>
+            <sql dbms="postgresql" splitStatements="true" stripComments="true">
+                <![CDATA[
+                -- Restore old columns (data is lost on rollback — acceptable for dev)
+                ALTER TABLE employees
+                    ADD COLUMN department  VARCHAR(100) NULL,
+                    ADD COLUMN designation VARCHAR(100) NULL;
+
+                -- Backfill names from FK tables
+                UPDATE employees e
+                SET department  = d.name
+                FROM departments d
+                WHERE e.department_id = d.id;
+
+                UPDATE employees e
+                SET designation = des.name
+                FROM designations des
+                WHERE e.designation_id = des.id;
+
+                -- Drop FK constraints and new columns
+                ALTER TABLE employees
+                    DROP CONSTRAINT IF EXISTS fk_employees_department,
+                    DROP CONSTRAINT IF EXISTS fk_employees_designation,
+                    DROP COLUMN IF EXISTS department_id,
+                    DROP COLUMN IF EXISTS designation_id;
+
+                DROP INDEX IF EXISTS idx_employees_department_id;
+                DROP INDEX IF EXISTS idx_employees_designation_id;
+                ]]>
+            </sql>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
